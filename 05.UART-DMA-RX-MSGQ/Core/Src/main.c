@@ -69,35 +69,21 @@ void StartDefaultTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 void debugMonitorTask(void const * argument);
-
-#ifdef __GNUC__
-#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
-#else
-#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
-#endif /* __GNUC__ */
-
-#ifdef __GNUC__
-#define GETCHAR_PROTOTYPE int __io_getchar(void)
-#else
-#define GETCHAR_PROTOTYPE int fgetc(FILE *f)
-#endif /* __GNUC__ */
-
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-PUTCHAR_PROTOTYPE
+int __io_putchar(int ch)
 {
 	if(HAL_UART_Transmit(sp_huart, (uint8_t *)&ch, 1, 10) != HAL_OK)
 		return -1;
-
 	return ch;
 }
 //
-GETCHAR_PROTOTYPE
-{
+//int __io_getchar(void)
+//{
 //	char data[4];
-	uint8_t ch = 0;//, len = 1;
+//	uint8_t ch, len = 1;
 //
 //	while(HAL_UART_Receive(sp_huart, &ch, 1, 10) != HAL_OK)
 //	{
@@ -123,8 +109,8 @@ GETCHAR_PROTOTYPE
 //			break;
 //	}
 ////	HAL_UART_Transmit(sp_huart, (uint8_t *)data, len, 10);
-	return ch;
-}
+//	return ch;
+//}
 /* USER CODE END 0 */
 
 /**
