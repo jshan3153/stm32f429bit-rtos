@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -33,6 +34,22 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#ifdef __GNUC__
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#else
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#endif /* __GNUC__ */
+
+#ifdef __GNUC__
+#define GETCHAR_PROTOTYPE int __io_getchar(void)
+#else
+#define GETCHAR_PROTOTYPE int fgetc(FILE *f)
+#endif /* __GNUC__ */
+
+#define BUFFER_SIZE 				16
+#define DEBUG_MONITOR_BUFFER_SIZE 	32
+#define DEBUG_MONITOR_ARGC_SIZE 	4
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -50,14 +67,14 @@ osThreadId debugMonitorHandle;
 
 osMessageQId debugMonitorQueueHandle;
 
-#define BUFFER_SIZE 16
-
 /*** Static Variables ***/
-static UART_HandleTypeDef *sp_huart;
 static uint8_t s_bufferRx[BUFFER_SIZE];
 //static uint8_t s_bufferTx[BUFFER_SIZE];
-uint8_t s_bufferRxRp = 0;
+uint8_t s_bufferRxRp = 0, stopDefaultTask = 0;
 uint32_t ProducerValue = 0, ConsumerValue = 0;
+static char s_storedCommand[DEBUG_MONITOR_BUFFER_SIZE];
+static uint32_t s_storedCommandIndex = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -69,23 +86,41 @@ void StartDefaultTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 void debugMonitorTask(void const * argument);
+static uint32_t led(char *argv[], uint32_t argc);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
+typedef struct {
+  char* cmd;
+  uint32_t (*func)(char *argv[], uint32_t argc);
+} DEBUG_MON_COMMAND;
+
+DEBUG_MON_COMMAND s_debugCommands[] = {
+//  {"enc", enc},
+//  {"ls", ls},
+//  {"fatfs", fatfs},
+  {"led",   led},
+//  {"cap",   cap},
+//  {"mode",  mode},
+//  {"test1", test1},
+//  {"test2", test2},
+  {(void*)0, (void*)0}
+};
+
 /* USER CODE BEGIN 0 */
-int __io_putchar(int ch)
+PUTCHAR_PROTOTYPE
 {
-	if(HAL_UART_Transmit(sp_huart, (uint8_t *)&ch, 1, 10) != HAL_OK)
+	if(HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 10) != HAL_OK)
 		return -1;
 	return ch;
 }
 //
-//int __io_getchar(void)
-//{
+GETCHAR_PROTOTYPE
+{
 //	char data[4];
-//	uint8_t ch, len = 1;
+	uint8_t ch = 0; //, len = 1;
 //
-//	while(HAL_UART_Receive(sp_huart, &ch, 1, 10) != HAL_OK)
+//	while(HAL_UART_Receive(&huart2, &ch, 1, 10) != HAL_OK)
 //	{
 //	}
 //
@@ -108,9 +143,9 @@ int __io_putchar(int ch)
 //			data[0] = ch;
 //			break;
 //	}
-////	HAL_UART_Transmit(sp_huart, (uint8_t *)data, len, 10);
-//	return ch;
-//}
+////	HAL_UART_Transmit(&huart2, (uint8_t *)data, len, 10);
+	return ch;
+}
 /* USER CODE END 0 */
 
 /**
@@ -144,15 +179,11 @@ int main(void)
   MX_DMA_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  sp_huart = &huart2;
-  //HAL_UART_Receive(sp_huart, &uart2RxData, 1, 100);
   s_bufferRxRp = 0;
 
   setbuf(stdin, NULL);
   setbuf(stdout, NULL);
   setbuf(stderr, NULL);
-
-  HAL_UART_Receive_DMA(sp_huart, s_bufferRx, BUFFER_SIZE);
 
   printf("stm32f429bit-rtos\r\n");
 //
@@ -275,7 +306,15 @@ static void MX_USART2_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USART2_Init 2 */
+  //UART DMA 수신 데이터 메모리 연결해 주는 역할
+  //idle 인터럽트 없이 데이터 수신할 경우
+  //HAL_UART_Receive_DMA(&huart2, s_bufferRx, BUFFER_SIZE);
+  //or
+  //idle 인터럽트 통해서 데이터 수신할 경우
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, s_bufferRx, BUFFER_SIZE);
 
+  //HaftComplte Interrupt 사용하지 않을 경우 비활성화
+  __HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
   /* USER CODE END USART2_Init 2 */
 
 }
@@ -324,6 +363,24 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+static uint32_t led(char *argv[], uint32_t argc)
+{
+	uint32_t onoff = atoi(argv[0]);
+
+	printf("LED:%ld\r\n", onoff);
+
+	if(onoff == 0){
+		HAL_GPIO_WritePin(GATE_RUN_LED_R_GPIO_Port, GATE_RUN_LED_R_Pin, GPIO_PIN_RESET);
+		stopDefaultTask = 0;
+	}
+	else{
+		HAL_GPIO_WritePin(GATE_RUN_LED_R_GPIO_Port, GATE_RUN_LED_R_Pin, GPIO_PIN_SET);
+		stopDefaultTask = 1;
+	}
+	return 1;
+}
+
 void usart_process_data(const void* data, size_t len)
 {
     const uint8_t* d = data;
@@ -336,13 +393,13 @@ void usart_process_data(const void* data, size_t len)
      */
 
     for (; len > 0; --len, ++d) {
-    	HAL_UART_Transmit(sp_huart, d, 1, 10);
+    	HAL_UART_Transmit(&huart2, d, 1, 10);
         //LL_USART_TransmitData8(USART3, *d);
-        //while (!LL_USART_IsActiveFlag_TXE(sp_huart)) {}
-        while(!(READ_BIT(sp_huart->Instance->SR, USART_SR_TXE) == (USART_SR_TXE))){}
+        //while (!LL_USART_IsActiveFlag_TXE(&huart2)) {}
+        while(!(READ_BIT(huart2.Instance->SR, USART_SR_TXE) == (USART_SR_TXE))){}
     }
-    //while (!LL_USART_IsActiveFlag_TC(sp_huart)) {}
-    while(!(READ_BIT(sp_huart->Instance->SR, USART_SR_TC) == (USART_SR_TC))){}
+    //while (!LL_USART_IsActiveFlag_TC(&huart2)) {}
+    while(!(READ_BIT(huart2.Instance->SR, USART_SR_TC) == (USART_SR_TC))){}
 }
 
 /**
@@ -354,13 +411,25 @@ void printf_(const char* str) {
 }
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
-	printf_("EC");
+	if(((BUFFER_SIZE -__HAL_DMA_GET_COUNTER(&hdma_usart2_rx))&(BUFFER_SIZE-1)) != s_bufferRxRp){
+		s_bufferRxRp &= (BUFFER_SIZE - 1);
+
+		HAL_UART_Transmit(&huart2, &s_bufferRx[s_bufferRxRp], 1, 10);
+
+		s_storedCommand[s_storedCommandIndex] = s_bufferRx[s_bufferRxRp];
+
+		/* check if one line is done */
+		if (s_bufferRx[s_bufferRxRp] == '\n' || s_bufferRx[s_bufferRxRp] == '\r' || s_bufferRxRp == DEBUG_MONITOR_BUFFER_SIZE-1) {
+			osMessagePut(debugMonitorQueueHandle, ++ProducerValue, 100);
+		}
+		s_bufferRxRp++;
+		s_storedCommandIndex++;
+	}
+
 }
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
 {
 	printf_("HT");
-
-	osMessagePut(debugMonitorQueueHandle, ++ProducerValue, 100);
 }
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
@@ -369,11 +438,21 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	osMessagePut(debugMonitorQueueHandle, ++ProducerValue, 100);
 }
 
+void debugMonitorShow()
+{
+	printf("<Command List>\r\n");
+
+	for(uint32_t i = 0; s_debugCommands[i].cmd != (void*)0; i++){
+		printf("%s\r\n", s_debugCommands[i].cmd);
+	}
+
+//	printf(">");
+}
+
 void debugMonitorTask(void const * argument)
 {
 	osEvent event;
 //	uint8_t bufferRxWp = 0;
-
 	printf("debugMonitorTask\r\n");
 
 	/* Infinite loop */
@@ -386,24 +465,54 @@ void debugMonitorTask(void const * argument)
 	    	if(event.value.v != ConsumerValue){
 	    		/* Catch-up. */
 	            ConsumerValue = event.value.v;
-	            printf_("CV");
+//	            printf_("CV");
 	            /* Simply call processing function */
+	            /* split input command */
+				char *argv[DEBUG_MONITOR_ARGC_SIZE] = {0};
+				uint32_t argc = 0;
 
-	            usart_process_data(s_bufferRx, __HAL_DMA_GET_COUNTER(&hdma_usart2_rx));
-				//bufferRxWp = (BUFFER_SIZE -_HAL_DMA_GET_COUNTER(hdma_usart2_rx))&(BUFFER_SIZE-1);
-//				if(bufferRxWp != s_bufferRxRp){
-//				  s_bufferRx[s_bufferRxRp++];
-//				  HAL_UART_Transmit(sp_huart, &ch, 1, 10);
-//				}
+				argv[argc++] = &s_storedCommand[0];
+
+				for(uint32_t i = 2; i <= s_storedCommandIndex; i++){
+					if(s_storedCommand[i] == '\r' || s_storedCommand[i] == '\n'){
+						s_storedCommand[i] = '\0';
+						break;
+					}
+					if(s_storedCommand[i] == ' '){
+						s_storedCommand[i] = '\0';
+						argv[argc++] = &s_storedCommand[i+1];
+
+						if(argc == DEBUG_MONITOR_ARGC_SIZE){
+							break;
+						}
+					}
+				}
+
+				/* call corresponding debug command */
+				uint32_t ret = 0;
+				for (uint32_t i = 0; s_debugCommands[i].cmd != (void*)0; i++) {
+					if (strcmp(s_debugCommands[i].cmd, argv[0]) == 0) {
+						ret = s_debugCommands[i].func(&argv[1], argc-1);
+//						printf(">");
+					}
+				}
+
+				if(ret != 1){
+					debugMonitorShow();
+				}
+
+//				s_bufferRxRp = 0;
+				s_storedCommandIndex = 0;
+				memset(s_storedCommand, '0', DEBUG_MONITOR_BUFFER_SIZE);
+				memset(s_bufferRx, '0', BUFFER_SIZE);
 	    	}
 	    	else{
-	            /* Increment the value we expect to remove from the queue next time round. */
-	            ++ConsumerValue;
-	            printf_("CV+");
+	    		/* Increment the value we expect to remove from the queue next time round. */
+	    		++ConsumerValue;
+	    		printf_("CV+");
 	    	}
 	    }
-
-		osDelay(1);
+//		osDelay(1);
 	}
 }
 
@@ -424,18 +533,21 @@ void StartDefaultTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-	osDelay(500);
-	HAL_GPIO_WritePin(GATE_RUN_LED_R_GPIO_Port, GATE_RUN_LED_R_Pin, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(GATE_RUN_LED_G_GPIO_Port, GATE_RUN_LED_G_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(GATE_RUN_LED_B_GPIO_Port, GATE_RUN_LED_B_Pin, GPIO_PIN_RESET);
-	osDelay(500);
-	HAL_GPIO_WritePin(GATE_RUN_LED_R_GPIO_Port, GATE_RUN_LED_R_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(GATE_RUN_LED_G_GPIO_Port, GATE_RUN_LED_G_Pin, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(GATE_RUN_LED_B_GPIO_Port, GATE_RUN_LED_B_Pin, GPIO_PIN_RESET);
-	osDelay(500);
-	HAL_GPIO_WritePin(GATE_RUN_LED_R_GPIO_Port, GATE_RUN_LED_R_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(GATE_RUN_LED_G_GPIO_Port, GATE_RUN_LED_G_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(GATE_RUN_LED_B_GPIO_Port, GATE_RUN_LED_B_Pin, GPIO_PIN_SET);
+	  if(!stopDefaultTask){
+		  HAL_GPIO_WritePin(GATE_RUN_LED_R_GPIO_Port, GATE_RUN_LED_R_Pin, GPIO_PIN_SET);
+		  HAL_GPIO_WritePin(GATE_RUN_LED_G_GPIO_Port, GATE_RUN_LED_G_Pin, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GATE_RUN_LED_B_GPIO_Port, GATE_RUN_LED_B_Pin, GPIO_PIN_RESET);
+		  osDelay(500);
+		  HAL_GPIO_WritePin(GATE_RUN_LED_R_GPIO_Port, GATE_RUN_LED_R_Pin, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GATE_RUN_LED_G_GPIO_Port, GATE_RUN_LED_G_Pin, GPIO_PIN_SET);
+		  HAL_GPIO_WritePin(GATE_RUN_LED_B_GPIO_Port, GATE_RUN_LED_B_Pin, GPIO_PIN_RESET);
+		  osDelay(500);
+		  HAL_GPIO_WritePin(GATE_RUN_LED_R_GPIO_Port, GATE_RUN_LED_R_Pin, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GATE_RUN_LED_G_GPIO_Port, GATE_RUN_LED_G_Pin, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GATE_RUN_LED_B_GPIO_Port, GATE_RUN_LED_B_Pin, GPIO_PIN_SET);
+		  osDelay(500);
+	  }
+
   }
   /* USER CODE END 5 */
 }
