@@ -23,6 +23,7 @@
 	  USART2_IRQHandler() 인터럽트는 발생하지 않았음.
 	  테러텀에서 데이터를 8개를 보내면 HAL_DMA_IRQHandler() 함수에서 인터럽트 발생함.
 	  스레드에서 printf 사용하면 hang 걸리는 현상이 있어서 uart 함수를 직접 호출해서 송신 데이터를 보내는 방식으로 변경
+	  Circular 방식의 버퍼를 설정
 	
 	참조
 	: https://github.com/MaJerle/stm32-usart-uart-dma-rx-tx/blob/main/projects/usart_rx_idle_line_irq_rtos_F4/Src/main.c#L309
@@ -39,7 +40,13 @@
 	: DMA Half Transfer 또는 Complete Transfer 인터럽트가 발생하면 메시지 송출.
 	  태스크에서 메시지 수신되면 DMA 버퍼에서 수신된 데이터 갯수만큼 다시 송신 처리
 	
-04.UartThreadReadWrite
-	PUTCHAR_PROTOTYPE
-	GETCHAR_PROTOTYPE
-	UART RX DMA Circular 설정
+06.Debug Monitor Task
+	목적
+	: 단말기 동작 확인을 위한 단위 시험 기능을 추가
+	
+	알 수 있는 것들 
+	:	PUTCHAR_PROTOTYPE
+		GETCHAR_PROTOTYPE
+		UART RX DMA Circular 설정
+		
+	알게 된 것들
