@@ -46,7 +46,6 @@
 #define GETCHAR_PROTOTYPE int fgetc(FILE *f)
 #endif /* __GNUC__ */
 
-#define BUFFER_SIZE 				16
 #define DEBUG_MONITOR_BUFFER_SIZE 	32
 #define DEBUG_MONITOR_ARGC_SIZE 	4
 
@@ -68,8 +67,8 @@ osThreadId debugMonitorHandle;
 osMessageQId debugMonitorQueueHandle;
 
 /*** Static Variables ***/
-static uint8_t s_bufferRx[BUFFER_SIZE];
-//static uint8_t s_bufferTx[BUFFER_SIZE];
+static uint8_t s_bufferRx[DEBUG_MONITOR_BUFFER_SIZE];
+//static uint8_t s_bufferTx[DEBUG_MONITOR_BUFFER_SIZE];
 uint8_t s_bufferRxRp = 0, stopDefaultTask = 0;
 uint32_t ProducerValue = 0, ConsumerValue = 0;
 static char s_storedCommand[DEBUG_MONITOR_BUFFER_SIZE];
@@ -308,10 +307,10 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
   //UART DMA 수신 데이터 메모리 연결해 주는 역할
   //idle 인터럽트 없이 데이터 수신할 경우
-  //HAL_UART_Receive_DMA(&huart2, s_bufferRx, BUFFER_SIZE);
+  //HAL_UART_Receive_DMA(&huart2, s_bufferRx, DEBUG_MONITOR_BUFFER_SIZE);
   //or
   //idle 인터럽트 통해서 데이터 수신할 경우
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, s_bufferRx, BUFFER_SIZE);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, s_bufferRx, DEBUG_MONITOR_BUFFER_SIZE);
 
   //HaftComplte Interrupt 사용하지 않을 경우 비활성화
   __HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
@@ -412,19 +411,15 @@ void printf_(const char* str) {
 }
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
-	if(((BUFFER_SIZE -__HAL_DMA_GET_COUNTER(&hdma_usart2_rx))&(BUFFER_SIZE-1)) != s_bufferRxRp){
-		s_bufferRxRp &= (BUFFER_SIZE - 1);
-
+	if(((DEBUG_MONITOR_BUFFER_SIZE -__HAL_DMA_GET_COUNTER(&hdma_usart2_rx))&(DEBUG_MONITOR_BUFFER_SIZE-1)) != s_bufferRxRp){
 		HAL_UART_Transmit(&huart2, &s_bufferRx[s_bufferRxRp], 1, 10);
-
-		s_storedCommand[s_storedCommandIndex] = s_bufferRx[s_bufferRxRp];
 
 		/* check if one line is done */
 		if (s_bufferRx[s_bufferRxRp] == '\n' || s_bufferRx[s_bufferRxRp] == '\r' || s_bufferRxRp == DEBUG_MONITOR_BUFFER_SIZE-1) {
 			osMessagePut(debugMonitorQueueHandle, ++ProducerValue, 100);
 		}
 		s_bufferRxRp++;
-		s_storedCommandIndex++;
+		s_bufferRxRp &= (DEBUG_MONITOR_BUFFER_SIZE - 1);
 	}
 }
 
@@ -466,6 +461,9 @@ void debugMonitorTask(void const * argument)
 	            ConsumerValue = event.value.v;
 //	            printf_("CV");
 	            /* Simply call processing function */
+	            memcpy(s_storedCommand, s_bufferRx, s_bufferRxRp);
+	            s_storedCommandIndex = s_bufferRxRp;
+
 	            /* split input command */
 				char *argv[DEBUG_MONITOR_ARGC_SIZE] = {0};
 				uint32_t argc = 0;
@@ -500,10 +498,8 @@ void debugMonitorTask(void const * argument)
 					debugMonitorShow();
 				}
 
-//				s_bufferRxRp = 0;
 				s_storedCommandIndex = 0;
 				memset(s_storedCommand, '0', DEBUG_MONITOR_BUFFER_SIZE);
-				memset(s_bufferRx, '0', BUFFER_SIZE);
 	    	}
 	    	else{
 	    		/* Increment the value we expect to remove from the queue next time round. */
