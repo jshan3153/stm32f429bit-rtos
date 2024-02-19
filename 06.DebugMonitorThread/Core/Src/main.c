@@ -434,19 +434,17 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void debugMonitorShow()
 {
-	printf("<Command List>\r\n");
+	printf("Command List");
 
 	for(uint32_t i = 0; s_debugCommands[i].cmd != (void*)0; i++){
 		printf("%s\r\n", s_debugCommands[i].cmd);
 	}
-
-//	printf(">");
 }
 
 void debugMonitorTask(void const * argument)
 {
 	osEvent event;
-//	uint8_t bufferRxWp = 0;
+
 	printf("debugMonitorTask\r\n");
 
 	/* Infinite loop */
@@ -459,7 +457,7 @@ void debugMonitorTask(void const * argument)
 	    	if(event.value.v != ConsumerValue){
 	    		/* Catch-up. */
 	            ConsumerValue = event.value.v;
-//	            printf_("CV");
+
 	            /* Simply call processing function */
 	            memcpy(s_storedCommand, s_bufferRx, s_bufferRxRp);
 	            s_storedCommandIndex = s_bufferRxRp;
