@@ -372,11 +372,12 @@ static uint32_t led(char *argv[], uint32_t argc)
 
 	if(onoff == 0){
 		HAL_GPIO_WritePin(GATE_RUN_LED_R_GPIO_Port, GATE_RUN_LED_R_Pin, GPIO_PIN_RESET);
-		stopDefaultTask = 0;
+		HAL_GPIO_WritePin(GATE_RUN_LED_G_GPIO_Port, GATE_RUN_LED_G_Pin, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GATE_RUN_LED_B_GPIO_Port, GATE_RUN_LED_B_Pin, GPIO_PIN_RESET);
+		stopDefaultTask = 1;
 	}
 	else{
-		HAL_GPIO_WritePin(GATE_RUN_LED_R_GPIO_Port, GATE_RUN_LED_R_Pin, GPIO_PIN_SET);
-		stopDefaultTask = 1;
+		stopDefaultTask = 0;
 	}
 	return 1;
 }
