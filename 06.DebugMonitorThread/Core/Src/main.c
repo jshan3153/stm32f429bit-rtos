@@ -425,8 +425,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 		s_bufferRxRp++;
 		s_storedCommandIndex++;
 	}
-
 }
+
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
 {
 	printf_("HT");
@@ -434,8 +434,6 @@ void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	printf_("CP");
-
-	osMessagePut(debugMonitorQueueHandle, ++ProducerValue, 100);
 }
 
 void debugMonitorShow()
@@ -512,7 +510,7 @@ void debugMonitorTask(void const * argument)
 	    		printf_("CV+");
 	    	}
 	    }
-//		osDelay(1);
+		osDelay(1);
 	}
 }
 
